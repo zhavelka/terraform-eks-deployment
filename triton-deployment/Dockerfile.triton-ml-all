@@ -1,0 +1,120 @@
+# Dockerfile.triton-ml-all
+# Custom Triton image with PyTorch, TensorFlow, ONNX, and other ML framework support
+FROM nvcr.io/nvidia/tritonserver:23.10-py3
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    python3-dev \
+    build-essential \
+    wget \
+    && rm -rf /var/lib/apt/lists/*
+
+# Upgrade pip and install with retry capability
+RUN pip3 install --upgrade pip setuptools wheel
+
+# Set pip environment variables for better reliability
+ENV PIP_DEFAULT_TIMEOUT=1000
+ENV PIP_RETRIES=10
+ENV PIP_DISABLE_PIP_VERSION_CHECK=1
+ENV PYTHONUNBUFFERED=1
+
+# Create a script to download with retries
+RUN cat > /usr/local/bin/pip-install-with-retry << 'EOF'
+#!/bin/bash
+max_retries=5
+retry_delay=10
+
+for i in $(seq 1 $max_retries); do
+    echo "Attempt $i of $max_retries..."
+    if pip3 install "$@"; then
+        echo "Success!"
+        exit 0
+    fi
+    if [ $i -lt $max_retries ]; then
+        echo "Failed, retrying in $retry_delay seconds..."
+        sleep $retry_delay
+    fi
+done
+echo "Failed after $max_retries attempts"
+exit 1
+EOF
+
+RUN chmod +x /usr/local/bin/pip-install-with-retry
+
+# Install PyTorch with retry mechanism
+# Using direct wheel URLs for more stable downloads
+RUN pip-install-with-retry --no-cache-dir \
+    https://download.pytorch.org/whl/cu118/torch-2.0.1%2Bcu118-cp310-cp310-linux_x86_64.whl
+
+# Install torchvision and torchaudio
+RUN pip-install-with-retry --no-cache-dir \
+    https://download.pytorch.org/whl/cu118/torchvision-0.15.2%2Bcu118-cp310-cp310-linux_x86_64.whl \
+    https://download.pytorch.org/whl/cu118/torchaudio-2.0.2%2Bcu118-cp310-cp310-linux_x86_64.whl
+
+# Install TensorFlow (smaller chunks)
+RUN pip-install-with-retry --no-cache-dir tensorflow-cpu==2.14.0
+RUN pip-install-with-retry --no-cache-dir tensorflow==2.14.0
+
+# Install ONNX Runtime and related packages
+RUN pip-install-with-retry --no-cache-dir onnxruntime-gpu==1.16.3 || \
+    pip-install-with-retry --no-cache-dir onnxruntime==1.16.3
+
+RUN pip-install-with-retry --no-cache-dir \
+    onnx==1.15.0 \
+    onnxconverter-common==1.14.0
+
+# Install Transformers and LLM packages
+RUN pip-install-with-retry --no-cache-dir \
+    transformers==4.35.2 \
+    accelerate==0.25.0
+
+RUN pip-install-with-retry --no-cache-dir \
+    sentencepiece==0.1.99 \
+    tokenizers==0.15.0 \
+    safetensors==0.4.1
+
+RUN pip-install-with-retry --no-cache-dir \
+    datasets==2.15.0 \
+    evaluate==0.4.1
+
+# Install ML frameworks and utilities
+RUN pip-install-with-retry --no-cache-dir \
+    scikit-learn==1.3.2 \
+    pandas==2.1.4 \
+    scipy==1.11.4
+
+RUN pip-install-with-retry --no-cache-dir \
+    numpy==1.24.4 \
+    opencv-python-headless==4.8.1.78 \
+    pillow==10.1.0
+
+RUN pip-install-with-retry --no-cache-dir \
+    matplotlib==3.8.2 \
+    seaborn==0.13.0
+
+# Install optimization and utility tools
+RUN pip-install-with-retry --no-cache-dir \
+    onnx-simplifier==0.4.35 \
+    tf2onnx==1.15.1
+
+RUN pip-install-with-retry --no-cache-dir \
+    protobuf==3.20.3 \
+    grpcio==1.60.0 \
+    boto3==1.33.13 \
+    requests==2.31.0 \
+    pyyaml==6.0.1 \
+    tqdm==4.66.1
+
+# Set environment variables for better GPU memory management
+ENV PYTORCH_CUDA_ALLOC_CONF=max_split_size_mb:512
+ENV TF_FORCE_GPU_ALLOW_GROWTH=true
+ENV TF_CPP_MIN_LOG_LEVEL=2
+ENV TOKENIZERS_PARALLELISM=false
+ENV OMP_NUM_THREADS=1
+
+# Create model cache directory
+RUN mkdir -p /models/.cache && chmod 777 /models/.cache
+ENV TRANSFORMERS_CACHE=/models/.cache
+ENV HF_HOME=/models/.cache
+
+WORKDIR /opt/tritonserver

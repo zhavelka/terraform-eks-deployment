@@ -35,3 +35,19 @@ override.tf.json
 # Ignore CLI configuration files
 .terraformrc
 terraform.rc
+
+
+./eks-deployment/.terraform/*
+./eks-deployment/.terraform.lock.hcl
+./eks-deployment/terraform.tfstate
+./eks-deployment/terraform.tfstate.backup
+
+./triton-deployment/.terraform/*
+./triton-deployment/.terraform.lock.hcl
+./triton-deployment/terraform.tfstate
+./triton-deployment/terraform.tfstate.backup
+
+./triton-secure-api/.terraform/*
+./triton-secure-api/.terraform.lock.hcl
+./triton-secure-api/terraform.tfstate
+./triton-secure-api/terraform.tfstate.backup
